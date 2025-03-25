@@ -1,30 +1,29 @@
-# Step 1: Use the official TensorFlow 2.11 image as the base
-FROM tensorflow/tensorflow:2.11.0
+# Use Miniconda as the base image
+FROM continuumio/miniconda3
 
-# Step 2: Install system dependencies
-RUN apt-get update && apt-get install -y \
-    git \
-    wget \
-    && rm -rf /var/lib/apt/lists/*
+# Set the working directory
+WORKDIR /workspace
 
-# Step 3: Upgrade pip to the latest version
-RUN python3 -m pip install --upgrade pip
+# Copy your pip requirements file into the container
+COPY requirements_GenNet.txt .
 
-# Step 4: Copy your requirements file into the container
-COPY requirements_GenNet.txt /tmp/requirements_GenNet.txt
+# Create the environment
+RUN conda create -n env_GenNet python=3.10.12 -y
 
-# Step 5: Install Python packages
-RUN pip install --no-cache-dir -r /tmp/requirements_GenNet.txt
+# Install pip packages
+RUN /bin/bash -c "source activate env_GenNet && \
+    pip install --upgrade pip && \
+    pip install -r requirements_GenNet.txt"
 
-# Step 6: Set the working directory
-WORKDIR /app
+# Copy your GenNet code into the image (optional)
+COPY . /workspace
 
-# Step 7: Copy your project files into the container
-COPY . /app
+# Create input/output folders (in case not mounted)
+RUN mkdir -p /workspace/processed_data /workspace/results
 
-# Step 8: Set environment variables (optional)
-ENV RESULT_PATH="/app/results"
-ENV DATA_PATH="/app/examples"
+# Activate environment for future RUN/CMD
+SHELL ["conda", "run", "-n", "env_GenNet", "/bin/bash", "-c"]
 
-# Step 9: Define the entrypoint to simplify CLI usage
-ENTRYPOINT ["python", "GenNet.py"]
+ENTRYPOINT ["conda", "run", "-n", "env_GenNet"]
+CMD ["/bin/bash"]
+
