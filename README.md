@@ -23,12 +23,18 @@ The Gennet framework is based on tensorflow, click [here](GenNet_utils/LocallyDi
 
 ## 2. Getting started
 
+GenNet can be used in two ways:
+- Manual installation: clone the repository and set up the virtual environment.
+- Use the docker image.
+
+### 1. Manual installation
+
 Follow the instructions below to get started.
 
 > [!TIP]
 > Check the [A to Z Colab tutorial](https://colab.research.google.com/github/ArnovanHilten/GenNet/blob/master/examples/A_to_Z/GenNet_A_to_Z.ipynb) for an overview on how to use GenNet with your own data!
 
-### Prerequisites:
+#### Prerequisites:
 
 - GenNet is optimized to use Tensorflow on CPU using multiple-cores as sparse matrix multiplcations does not benefit from GPU acceleration. We are currently restricting testing and recommending using:
 
@@ -38,13 +44,13 @@ Follow the instructions below to get started.
 
 
  
-### Clone the repository
+#### Clone the repository
 
 Open terminal. Navigate to the a place where you want to store the project. Clone the repository:
 ```
 git clone https://github.com/arnovanhilten/GenNet
 ```
-### Install the virtual envionment
+#### Install the virtual envionment
 
 **Create a virtual environment**
 ```
@@ -72,6 +78,56 @@ python GenNet.py train -path ./examples/example_classification/ -ID 1
 ```
 
 Check the [wiki](https://github.com/ArnovanHilten/GenNet/wiki) for more info!
+
+
+### 2. Docker
+
+Make sure that you have [docker](https://www.docker.com/) installed:
+
+#### Pull the Docker image
+ ```bash 
+ docker pull avanhilten/gennet-image:latest
+```
+ #### Run the docker
+
+In Linux/macOS/WSL:
+
+```bash
+docker run --rm -it \
+      -v $(pwd)/examples:/workspace/examples \
+      -v $(pwd)/processed_data:/workspace/processed_data \
+      -v $(pwd)/results:/workspace/results \ avanhilten/gennet-image \
+```
+Or in powershell: 
+ ```
+powershell docker run --rm -it   -v C:\Users\YOURNAME\GenNet\examples:/workspace/examples `
+                                 -v C:\Users\YOURNAME\GenNet\processed_data:/workspace/processed_data `
+                                 -v C:\Users\YOURNAME\GenNet\results:/workspace/results `
+                                 avanhilten/gennet-image
+ ```
+> Replace `YOURNAME` with your actual Windows username and adjust the paths if needed.
+
+Then all GenNet commands can be utilized, such as:
+ ```
+python GenNet.py train -path /workspace/examples/example_classification -ID 1 -out results
+```
+
+> [!CAUTION]
+> Output argument required
+> Always include the 
+> `-out /workspace/results` argument when running in Docker to ensure results are written to the mounted `results/` folder on your machine. 
+
+#### Running on your own data 
+
+You can mount your own input/output directories: 
+```bash
+docker run --rm -it \
+                     -v /path/to/my_data:/workspace/my_data \
+                     -v /path/to/output:/workspace/output \
+                      avanhilten/gennet-image \
+
+python GenNet.py train -path /workspace/my_data -ID 7 -out /workspace/output
+ ``` 
 
 ## 3. GenNet command line.
 <img align = "right" src="https://github.com/ArnovanHilten/GenNet/blob/master/figures/Gennet_wiki_overview.png?raw=true" width="480">
