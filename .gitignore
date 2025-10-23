@@ -23,3 +23,7 @@ results/*
 .log
 *.log
 examples/A_to_Z/processed_data/*
+data/*
+annovar/*
+my_simulation_run/*
+scripts/my_simulation_run/*
