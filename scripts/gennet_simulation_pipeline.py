@@ -16,6 +16,18 @@ import argparse
 from pathlib import Path
 import shutil
 from typing import Dict, List, Tuple
+import sys
+
+# Add GenNet_utils to path
+sys.path.insert(0, str(Path(__file__).parent.parent.resolve()))
+
+# Import simulation utilities
+from GenNet_utils.simulation_utils import (
+    create_effect_file_from_snps,
+    calculate_grs_from_effects,
+    apply_liability_threshold_model,
+    create_gennet_subject_file
+)
 
 class GenNetSimulationEnhanced:
     def __init__(self, vcf_file, output_dir="gennet_simulation_enhanced"):
@@ -137,9 +149,21 @@ class GenNetSimulationEnhanced:
             print("Warning: GenNet.py not found, skipping HDF5 conversion")
             return str(h5_output_dir)
     
-    def create_topology(self, plink_prefix, n_genes=500):
-        """Step 3: Create topology file with correct GenNet format"""
-        print("=== Step 3: Creating topology ===")
+    def create_topology(self, plink_prefix, n_genes=500, pleiotropy=True, seed=42):
+        """Step 3: Create biologically realistic topology with contiguous genes and pathway pleiotropy
+
+        Args:
+            plink_prefix: Path to PLINK files
+            n_genes: Number of artificial genes to create
+            pleiotropy: If True, genes can belong to multiple pathways (more realistic)
+            seed: Random seed for reproducible pathway assignments
+
+        Returns:
+            Tuple of (topology_file_path, topology_data_list)
+        """
+        print("=== Step 3: Creating biologically realistic topology ===")
+
+        np.random.seed(seed)
 
         # Read BIM file
         bim = pd.read_csv(f"{plink_prefix}.bim", sep='\t', header=None,
@@ -147,35 +171,74 @@ class GenNetSimulationEnhanced:
 
         print(f"Creating topology for {len(bim)} SNPs")
 
-        # Create gene to pathway mapping
-        n_pathways = max(1, n_genes // 20)  # ~20 genes per pathway
-        gene_to_pathway = {}
-        pathway_idx = 0
-        for gene_idx in range(n_genes):
-            if gene_idx > 0 and gene_idx % 20 == 0:
-                pathway_idx += 1
-            gene_to_pathway[gene_idx] = pathway_idx
+        # Calculate SNPs per gene for contiguous blocks
+        snps_per_gene = max(1, len(bim) // n_genes)
+        actual_n_genes = min(n_genes, len(bim))  # Adjust if not enough SNPs
 
+        print(f"Contiguous gene blocks: ~{snps_per_gene} SNPs per gene")
+
+        # Create pathway structure
+        n_pathways = max(1, actual_n_genes // 20)  # ~20 genes per pathway
+
+        # Create gene-to-pathway mappings with pleiotropy
+        gene_pathway_memberships = {}
+
+        for gene_idx in range(actual_n_genes):
+            # Primary pathway assignment (all genes have one)
+            primary_pathway = gene_idx // 20
+            pathways = [primary_pathway]
+
+            if pleiotropy:
+                # 50% chance of secondary pathway membership
+                if np.random.rand() < 0.5:
+                    available = [p for p in range(n_pathways) if p != primary_pathway]
+                    if available:
+                        secondary = np.random.choice(available)
+                        pathways.append(secondary)
+
+                # 20% chance of tertiary pathway membership (hub genes)
+                if len(pathways) == 2 and np.random.rand() < 0.2:
+                    available = [p for p in range(n_pathways) if p not in pathways]
+                    if available:
+                        tertiary = np.random.choice(available)
+                        pathways.append(tertiary)
+
+            gene_pathway_memberships[gene_idx] = pathways
+
+        # Build topology rows with pleiotropy
         topology_rows = []
         for snp_idx, row in bim.iterrows():
-            # Assign SNP to gene (distribute evenly)
-            gene_idx = snp_idx % n_genes
-            pathway_idx = gene_to_pathway[gene_idx]
+            # Assign SNP to gene using CONTIGUOUS BLOCKS (preserves LD)
+            gene_idx = min(snp_idx // snps_per_gene, actual_n_genes - 1)
 
-            topology_rows.append({
-                'chr': row['chr'],
-                'layer0_node': snp_idx,
-                'layer0_name': row['snp'],
-                'layer1_node': gene_idx,
-                'layer1_name': f"GENE_{gene_idx}",
-                'layer2_node': pathway_idx,
-                'layer2_name': f"PATHWAY_{pathway_idx}"
-            })
+            # Get all pathways this gene belongs to
+            pathways_for_gene = gene_pathway_memberships[gene_idx]
+
+            # Create one topology row for EACH pathway membership
+            for pathway_idx in pathways_for_gene:
+                topology_rows.append({
+                    'chr': row['chr'],
+                    'layer0_node': snp_idx,
+                    'layer0_name': row['snp'],
+                    'layer1_node': gene_idx,
+                    'layer1_name': f"GENE_{gene_idx}",
+                    'layer2_node': pathway_idx,
+                    'layer2_name': f"PATHWAY_{pathway_idx}"
+                })
 
         topology_file = self.output_dir / "topology.csv"
         pd.DataFrame(topology_rows).to_csv(topology_file, index=False)
 
-        print(f"Topology created: {len(topology_rows)} SNPs -> {n_genes} genes -> {len(set(gene_to_pathway.values()))} pathways")
+        # Calculate statistics
+        unique_genes = len(gene_pathway_memberships)
+        avg_pathways_per_gene = np.mean([len(p) for p in gene_pathway_memberships.values()])
+        genes_in_multiple = sum(1 for p in gene_pathway_memberships.values() if len(p) > 1)
+
+        print(f"Topology created: {len(bim)} SNPs -> {unique_genes} genes -> {n_pathways} pathways")
+        print(f"  SNPs per gene: ~{snps_per_gene} (contiguous blocks preserve LD)")
+        print(f"  Pathway pleiotropy: {avg_pathways_per_gene:.2f} pathways per gene (avg)")
+        print(f"  Pleiotropic genes: {genes_in_multiple}/{unique_genes} ({100*genes_in_multiple/unique_genes:.1f}%)")
+        print(f"  Total topology rows: {len(topology_rows)} (includes pathway memberships)")
 
         return str(topology_file), topology_rows
     
@@ -186,11 +249,7 @@ class GenNetSimulationEnhanced:
             np.random.seed(seed)
         
         print(f"=== Simulating ADDITIVE phenotype (h2={h2}, n_genes={n_causal_genes}) ===")
-        
-        # Get FAM file for sample IDs
-        fam = pd.read_csv(f"{plink_prefix}.fam", sep=r'\s+', header=None,
-                        names=['fid', 'iid', 'father', 'mother', 'sex', 'pheno'])
-        
+
         # Get unique genes from topology
         topology_df = pd.DataFrame(topology_data)
         genes = topology_df['layer1_name'].unique()
@@ -203,70 +262,33 @@ class GenNetSimulationEnhanced:
         
         print(f"Selected {len(causal_snps)} causal SNPs from {n_causal_genes} genes")
         
-        # Create effect file for PLINK scoring
-        bim = pd.read_csv(f"{plink_prefix}.bim", sep='\t', header=None,
-                        names=['chr', 'snp', 'cm', 'pos', 'a1', 'a2'])
-        
-        # Equal effect sizes for all causal SNPs (purely additive)
-        effect_size = 1.0 / np.sqrt(len(causal_snps))
-        effects = []
-        for snp in causal_snps:
-            snp_info = bim[bim['snp'] == snp]
-            if len(snp_info) > 0:
-                effects.append({
-                    'SNP': snp,
-                    'A1': snp_info.iloc[0]['a1'],
-                    'BETA': effect_size
-                })
-        
+        # Create effect file using utility function
         effects_file = self.output_dir / f"effects_additive_h{h2}_g{n_causal_genes}.txt"
-        pd.DataFrame(effects).to_csv(effects_file, sep='\t', header=False, index=False)
-        
-        # Calculate GRS using plink2
+        bim_file = f"{plink_prefix}.bim"
+
+        create_effect_file_from_snps(
+            causal_snps=causal_snps,
+            bim_file=bim_file,
+            output_file=str(effects_file)
+        )
+
+        # Calculate GRS using utility function
         grs_prefix = self.output_dir / f"grs_additive_h{h2}_g{n_causal_genes}"
-        
-        cmd = f"""plink2 --bfile {plink_prefix} \
-                --score {effects_file} 1 2 3 \
-                --out {grs_prefix}"""
-        
-        subprocess.run(cmd, shell=True, check=True)
-        
-        # Read the score output
-        score_file = f"{grs_prefix}.sscore"
-        if not Path(score_file).exists():
-            score_file = f"{grs_prefix}.profile"
-        
-        grs_df = pd.read_csv(score_file, sep=r'\s+')
-        
-        # Get the score column
-        score_col = None
-        for col in ['SCORE1_SUM', 'SCORE1_AVG', 'SCORESUM', 'SCORE']:
-            if col in grs_df.columns:
-                score_col = col
-                break
-        
-        if score_col is None:
-            print(f"Warning: Could not find score column. Available columns: {grs_df.columns.tolist()}")
-            grs = np.random.normal(0, 1, len(fam))
-        else:
-            grs = grs_df[score_col].values
-        
-        # Standardize GRS
-        if grs.std() > 0:
-            grs_std = (grs - grs.mean()) / grs.std()
-        else:
-            grs_std = grs - grs.mean()
-        
-        # Add environmental component
-        genetic_component = np.sqrt(h2) * grs_std
-        environmental_component = np.sqrt(1 - h2) * np.random.normal(0, 1, len(grs))
-        liability = genetic_component + environmental_component
-        
-        # Binary phenotype
-        threshold = np.percentile(liability, 50)  # 50% prevalence
-        phenotype = (liability > threshold).astype(int)
-        
-        print(f"Created phenotype: {phenotype.sum()} cases, {len(phenotype) - phenotype.sum()} controls")
+
+        grs = calculate_grs_from_effects(
+            plink_prefix=plink_prefix,
+            effects_file=str(effects_file),
+            output_prefix=str(grs_prefix)
+        )
+
+        # Apply liability threshold model using utility function
+        phenotype, _, _, _, _ = apply_liability_threshold_model(
+            grs=grs,
+            h2=h2,
+            prevalence=0.5,
+            seed=seed,
+            verbose=True
+        )
         
         return phenotype, causal_genes, causal_snps, effects_file
     
@@ -540,46 +562,24 @@ class GenNetSimulationEnhanced:
         
         return phenotype, causal_genes, reduced_snps, reduced_effects_file
     
-    def create_subject_file(self, plink_prefix, phenotype, scenario_name, 
+    def create_subject_file(self, plink_prefix, phenotype, scenario_name,
                           h2, n_causal_genes, seed=None):
-        """Create GenNet-format subject file"""
-        
-        # Get FAM file for sample IDs
-        fam = pd.read_csv(f"{plink_prefix}.fam", sep=r'\s+', header=None,
-                        names=['fid', 'iid', 'father', 'mother', 'sex', 'pheno'])
-        
-        n_samples = len(fam)
-        
-        # Split into train/val/test (60/20/20)
-        if seed:
-            np.random.seed(seed)
-        indices = np.arange(n_samples)
-        np.random.shuffle(indices)
-        
-        train_idx = indices[:int(0.6 * n_samples)]
-        val_idx = indices[int(0.6 * n_samples):int(0.8 * n_samples)]
-        test_idx = indices[int(0.8 * n_samples):]
-        
-        # Create set assignments (GenNet expects 1=train, 2=val, 3=test)
-        set_assignment = np.zeros(n_samples, dtype=int)
-        set_assignment[train_idx] = 1
-        set_assignment[val_idx] = 2
-        set_assignment[test_idx] = 3
-        
-        # Create GenNet-format subject file
-        subject_df = pd.DataFrame({
-            'patient_id': fam['iid'].values,
-            'labels': phenotype,
-            'genotype_row': np.arange(n_samples),
-            'set': set_assignment
-        })
-        
+        """Create GenNet-format subject file using utility function"""
+
         subject_file = self.output_dir / f"subjects_{scenario_name}_h{h2}_g{n_causal_genes}.csv"
-        subject_df.to_csv(subject_file, index=False)
-        
-        print(f"Created subject file: Train={sum(set_assignment==1)}, Val={sum(set_assignment==2)}, Test={sum(set_assignment==3)}")
-        
-        return str(subject_file)
+
+        subject_file_path, _ = create_gennet_subject_file(
+            plink_prefix=plink_prefix,
+            phenotype=phenotype,
+            output_file=str(subject_file),
+            train_frac=0.6,
+            val_frac=0.2,
+            test_frac=0.2,
+            seed=seed,
+            verbose=True
+        )
+
+        return subject_file_path
     
     def run_comprehensive_experiments(self):
         """Run comprehensive experiment suite with all Kelemen scenarios"""

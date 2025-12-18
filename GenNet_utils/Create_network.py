@@ -49,6 +49,10 @@ def example_network(inputsize, num_covariates=0):
 
 
 def regression_properties(datapath):
+    # Ensure datapath has trailing slash
+    if not datapath.endswith('/'):
+        datapath = datapath + '/'
+
     ytrain = pd.read_csv(datapath + "subjects.csv")
     mean_ytrain = float(ytrain[ytrain["set"] == 1]["labels"].mean())
     negative_values_ytrain = float(ytrain[ytrain["set"] == 1]["labels"].min()) < 0
@@ -123,6 +127,12 @@ def create_network_from_npz(datapath,
                             num_covariates=0,
                             mask_order = [],
                             batchnorm = True):
+    # Ensure paths have trailing slashes
+    if not datapath.endswith('/'):
+        datapath = datapath + '/'
+    if not genotype_path.endswith('/'):
+        genotype_path = genotype_path + '/'
+
     print("Creating networks from npz masks")
     print("regression", regression)
     print("one_hot", one_hot)
@@ -212,16 +222,22 @@ def create_network_from_npz(datapath,
 
 
 
-def create_network_from_csv(datapath, 
-                            inputsize, 
+def create_network_from_csv(datapath,
+                            inputsize,
                             genotype_path,
-                            l1_value=0.01, 
-                            L1_act =0.01, 
+                            l1_value=0.01,
+                            L1_act =0.01,
                             regression=False,
                             one_hot=False,
                             num_covariates=0,
                             batchnorm=True):
-    
+
+    # Ensure paths have trailing slashes
+    if not datapath.endswith('/'):
+        datapath = datapath + '/'
+    if not genotype_path.endswith('/'):
+        genotype_path = genotype_path + '/'
+
     print("Creating networks from npz masks")
     print("regression", regression)
     if regression:

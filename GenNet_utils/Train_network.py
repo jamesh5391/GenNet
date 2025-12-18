@@ -34,12 +34,21 @@ def train_model(args):
     model = None
     masks = None
 
-    
+
     args.datapath = args.path
-    
+
+    # Set regression flag based on problem_type
+    if not hasattr(args, 'regression'):
+        args.regression = (args.problem_type == "regression")
 
     if args.genotype_path == "undefined":
         args.genotype_path = args.path
+
+    # Ensure args.path and args.genotype_path have trailing slashes BEFORE any usage
+    if not args.path.endswith('/'):
+        args.path = args.path + '/'
+    if not args.genotype_path.endswith('/'):
+        args.genotype_path = args.genotype_path + '/'
 
     if args.mixed_precision:
         use_mixed_precision()
@@ -166,13 +175,32 @@ def train_model(args):
         fig_val.savefig(args.resultpath + "/validation_predictions.png", bbox_inches='tight', pad_inches=0)
 
         print("Analysis over the test set")
-        ptest = model.predict_generator(
-            EvalGenerator(datapath=args.datapath, genotype_path=args.genotype_path, batch_size=args.batch_size,
-                          setsize=args.test_size, inputsize=args.inputsize, evalset="test", one_hot=args.onehot))
+        print("DEBUG: Creating test set generator...")
+        test_generator = EvalGenerator(datapath=args.datapath, genotype_path=args.genotype_path, batch_size=args.batch_size,
+                          setsize=args.test_size, inputsize=args.inputsize, evalset="test", one_hot=args.onehot)
+        print(f"DEBUG: Test generator created. Batch size: {args.batch_size}, Test size: {args.test_size}")
+
+        print("DEBUG: Running predictions...")
+        ptest = model.predict_generator(test_generator)
+        print(f"DEBUG: Predictions complete. Shape: {ptest.shape}")
+
+        print("DEBUG: Loading test labels...")
         ytest = get_labels(args.datapath, set_number=3)
+        print(f"DEBUG: Test labels loaded. Shape: {ytest.shape}")
+
+        print("DEBUG: Evaluating regression performance...")
         fig_test, mse_test, explained_variance_test, r2_test = evaluate_performance_regression(ytest, ptest)
+        print("DEBUG: Evaluation complete")
+
+        print("DEBUG: Saving predictions...")
         np.save(args.resultpath + "/ptest.npy", ptest)
+        print("DEBUG: Saving figure...")
         fig_test.savefig(args.resultpath + "/test_predictions.png", bbox_inches='tight', pad_inches=0)
+        print("DEBUG: Figure saved")
+        print("DEBUG: Closing figures to free memory...")
+        import matplotlib.pyplot as plt
+        plt.close('all')
+        print("DEBUG: Figures closed")
     else:
         # Classification-specific post training analysis
         print("Analysis over the validation set")
@@ -182,7 +210,7 @@ def train_model(args):
         yval = get_labels(args.datapath, set_number=2)
         auc_val, confusionmatrix_val = evaluate_performance_classification(yval, pval)
         np.save(args.resultpath + "/pval.npy", pval)
-        
+
 
         print("Analysis over the test set")
         ptest = model.predict_generator(
@@ -191,10 +219,11 @@ def train_model(args):
         ytest = get_labels(args.datapath, set_number=3)
         auc_test, confusionmatrix_test = evaluate_performance_classification(ytest, ptest)
         np.save(args.resultpath + "/ptest.npy", ptest)
-        
-        
+
+
 
     # Saving Results
+    print("DEBUG: Starting to save results summary...")
     data = {'Jobid': args.ID,
             'Datapath': str(args.path),
             'genotype_path': str(args.genotype_path),
@@ -228,16 +257,29 @@ def train_model(args):
         data['confusionmatrix_val'] = confusionmatrix_val
         data['confusionmatrix_test'] = confusionmatrix_test
 
+    print("DEBUG: Creating pandas summary...")
     pd_summary_row = pd.Series(data)
+    print("DEBUG: Saving summary CSV...")
     pd_summary_row.to_csv(args.resultpath + "/pd_summary_results.csv")
-    
-    with open(args.resultpath + "results_summary.txt", 'w') as f: 
-        for key, value in data.items(): 
-            f.write('%s:%s\n' % (key, value))
+    print("DEBUG: Summary CSV saved")
 
+    print("DEBUG: Saving results summary text file...")
+    with open(args.resultpath + "results_summary.txt", 'w') as f:
+        for key, value in data.items():
+            f.write('%s:%s\n' % (key, value))
+    print("DEBUG: Results summary saved")
+
+    print("DEBUG: Checking for topology file...")
     if os.path.exists(args.datapath + "/topology.csv"):
-        importance_csv = create_importance_csv(args.datapath, model, masks)
-        importance_csv.to_csv(args.resultpath + "connection_weights.csv")
+        print("DEBUG: Skipping connection weights CSV (memory intensive for large networks)")
+        print("       Model weights are saved in bestweights_job.h5 if you need them later")
+        # Skip create_importance_csv to avoid memory explosion with large networks
+        # importance_csv = create_importance_csv(args.datapath, model, masks)
+        # importance_csv.to_csv(args.resultpath + "connection_weights.csv")
+    else:
+        print("DEBUG: No topology file found, skipping connection weights")
+
+    print("DEBUG: Train_model function complete!")
 
 def get_network(args):
     """needs the following inputs

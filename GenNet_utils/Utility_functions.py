@@ -32,13 +32,13 @@ def get_paths(args):
     folder = ("GenNet_experiment_" + str(args.ID))
 
     if args.out == "undefined":
-        resultpath = os.path.dirname(os.getcwd()) + "/GenNet/results/" + folder + "_" + str(args.suffix) + "/"
+        resultpath = os.path.dirname(os.getcwd()) + "/results/" + folder + "_" + str(args.suffix) + "/"
     else:
         resultpath = str(args.out) + "/" + folder + "_" + str(args.suffix) + "/"
 
     if not os.path.exists(resultpath):
         print("Resultspath did not exist but is made now")
-        os.mkdir(resultpath)
+        os.makedirs(resultpath, exist_ok=True)
 
     return folder, resultpath
 
@@ -103,12 +103,25 @@ def evaluate_performance_regression(y, p):
     # print("maximum error =", maximum_error)
     print("r2 =", r2)
 
-    plt.figure()
-    df = pd.DataFrame([])
-    df["truth"] = y
-    df["predicted"] = p
+    # Use simpler plot to avoid memory explosion with large datasets
+    # Subsample if dataset is large to keep plot manageable
+    max_plot_points = 1000
+    if len(y) > max_plot_points:
+        print(f"DEBUG: Subsampling {len(y)} points to {max_plot_points} for plotting to save memory")
+        indices = np.random.choice(len(y), max_plot_points, replace=False)
+        y_plot = y[indices]
+        p_plot = p[indices]
+    else:
+        y_plot = y
+        p_plot = p
 
-    fig = sns.jointplot(x="truth", y="predicted", data=df, alpha=0.5)
+    df = pd.DataFrame([])
+    df["truth"] = y_plot
+    df["predicted"] = p_plot
+
+    # Use rasterized=True and lower alpha to reduce memory usage
+    fig = sns.jointplot(x="truth", y="predicted", data=df, alpha=0.3,
+                       joint_kws={'rasterized': True, 's': 10})
     return fig, mse, explained_variance, r2
 
 
@@ -145,7 +158,11 @@ def evaluate_performance_classification(y, p):
 
 
 def create_importance_csv(datapath, model, masks):
-    network_csv = pd.read_csv(datapath + "/topology.csv")
+    # Ensure datapath has trailing slash
+    if not datapath.endswith('/'):
+        datapath = datapath + '/'
+
+    network_csv = pd.read_csv(datapath + "topology.csv")
 
     coordinate_list = []
     for i, mask in zip(np.arange(len(masks)), masks):

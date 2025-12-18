@@ -24,6 +24,12 @@ def check_data(datapath, genotype_path, mode):
     number_of_covariats = False
     classification_problem = "undetermined"
 
+    # Ensure paths have trailing slashes
+    if not datapath.endswith('/'):
+        datapath = datapath + '/'
+    if not genotype_path.endswith('/'):
+        genotype_path = genotype_path + '/'
+
     if os.path.exists(genotype_path + 'genotype.h5'):
         genotype_matrix = True
     elif len(glob.glob(genotype_path + '*.h5')) > 0:
@@ -78,6 +84,10 @@ def check_data(datapath, genotype_path, mode):
 
 
 def get_inputsize(genotype_path):
+    # Ensure genotype_path has trailing slash
+    if not genotype_path.endswith('/'):
+        genotype_path = genotype_path + '/'
+
     single_genotype_path = glob.glob(genotype_path + '*.h5')[0]
     h5file = tables.open_file(single_genotype_path, "r")
     inputsize = h5file.root.data.shape[1]
@@ -86,7 +96,11 @@ def get_inputsize(genotype_path):
 
 
 def get_labels(datapath, set_number):
-    groundtruth = pd.read_csv(datapath + "/subjects.csv")
+    # Ensure datapath has trailing slash
+    if not datapath.endswith('/'):
+        datapath = datapath + '/'
+
+    groundtruth = pd.read_csv(datapath + "subjects.csv")
     groundtruth = groundtruth[groundtruth["set"] == set_number]
     ybatch = np.reshape(np.array(groundtruth["labels"].values), (-1, 1))
     return ybatch
@@ -97,6 +111,12 @@ def get_labels(datapath, set_number):
 class TrainDataGenerator(K.utils.Sequence):
 
     def __init__(self, datapath, genotype_path, batch_size, trainsize, inputsize, epoch_size, shuffle=True, one_hot=False):
+        # Ensure paths have trailing slashes
+        if not datapath.endswith('/'):
+            datapath = datapath + '/'
+        if not genotype_path.endswith('/'):
+            genotype_path = genotype_path + '/'
+
         self.datapath = datapath
         self.batch_size = batch_size
         self.genotype_path = genotype_path
@@ -104,7 +124,7 @@ class TrainDataGenerator(K.utils.Sequence):
         self.trainsize = trainsize
         self.multi_h5 = len(glob.glob(self.genotype_path + '*.h5')) > 1
         self.h5filenames = "_UKBB_MRI_QC_T_M"
-        self.training_subjects = pd.read_csv(self.datapath + "/subjects.csv")
+        self.training_subjects = pd.read_csv(self.datapath + "subjects.csv")
         self.training_subjects = self.training_subjects[self.training_subjects["set"] == 1]
         self.inputsize = inputsize
         self.epoch_size = epoch_size
@@ -199,6 +219,12 @@ class TrainDataGenerator(K.utils.Sequence):
 class EvalGenerator(K.utils.Sequence):
 
     def __init__(self, datapath, genotype_path, batch_size, setsize, inputsize, evalset="undefined", one_hot=False):
+        # Ensure paths have trailing slashes
+        if not datapath.endswith('/'):
+            datapath = datapath + '/'
+        if not genotype_path.endswith('/'):
+            genotype_path = genotype_path + '/'
+
         self.datapath = datapath
         self.batch_size = batch_size
         self.yvalsize = setsize
@@ -207,7 +233,7 @@ class EvalGenerator(K.utils.Sequence):
         self.h5file = []
         self.h5filenames = "_UKBB_MRI_QC_T_M"
         self.multi_h5 = len(glob.glob(self.genotype_path + '*.h5')) > 1
-        self.eval_subjects = pd.read_csv(self.datapath + "/subjects.csv")
+        self.eval_subjects = pd.read_csv(self.datapath + "subjects.csv")
         self.one_hot = one_hot
         
         if evalset == "validation":
