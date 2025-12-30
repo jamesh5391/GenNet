@@ -1,4 +1,3 @@
-import os
 import sys
 import glob
 import numpy as np
@@ -13,6 +12,7 @@ import scipy
 import tables
 tf.keras.backend.set_epsilon(0.0000001)
 
+import os
 from GenNet_utils.Normalization import PerVariantNormalization
 
 tf_version = tf.__version__  # ToDo use packaging.version
@@ -59,12 +59,17 @@ def regression_properties(datapath):
     return mean_ytrain, negative_values_ytrain
 
 
-def layer_block(model, mask, i, regression, L1_act=0.01,  batchnorm=True):
-    if regression:
-        activation_type="relu"
-    else:
-        activation_type="tanh"
-    
+def layer_block(model, mask, i, regression, L1_act=0.01,  batchnorm=True, activation_type=None):
+    if activation_type is None:
+        if regression:
+            activation_type="relu"
+        else:
+            activation_type="tanh"
+
+    # Debug print for first layer only
+    if i == 0:
+        print(f"Hidden layer activation: {activation_type}")
+
     model = LocallyDirected1D(mask=mask, filters=1, input_shape=(mask.shape[0], 1),
                               name="LocallyDirected_" + str(i), activity_regularizer=K.regularizers.l1(L1_act))(model)
     model = K.layers.Activation(activation_type)(model)
@@ -230,7 +235,8 @@ def create_network_from_csv(datapath,
                             regression=False,
                             one_hot=False,
                             num_covariates=0,
-                            batchnorm=True):
+                            batchnorm=True,
+                            activation_type=None):
 
     # Ensure paths have trailing slashes
     if not datapath.endswith('/'):
@@ -274,7 +280,8 @@ def create_network_from_csv(datapath,
             matrixshape = (network_csv[columns[i]].max() + 1, network_csv[columns[i + 1]].max() + 1)
         mask = scipy.sparse.coo_matrix(((matrix_ones), matrix_coord), shape = matrixshape)
         masks.append(mask)
-        model = layer_block(model, mask, i, regression, L1_act=L1_act, batchnorm=batchnorm)
+        model = layer_block(model, mask, i, regression, L1_act=L1_act, batchnorm=batchnorm,
+                            activation_type=activation_type)
 
     model = K.layers.Flatten()(model)
 

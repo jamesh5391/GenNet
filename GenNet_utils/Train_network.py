@@ -41,6 +41,8 @@ def train_model(args):
     if not hasattr(args, 'regression'):
         args.regression = (args.problem_type == "regression")
 
+    if not hasattr(args, 'activation_type'):
+        args.activation_type = None
     if args.genotype_path == "undefined":
         args.genotype_path = args.path
 
@@ -337,7 +339,7 @@ def get_network(args):
                                                    genotype_path=args.genotype_path,
                                                    l1_value=args.L1, L1_act=args.L1_act, regression=regression,
                                                    num_covariates=args.num_covariates, one_hot=args.onehot,
-                                                   batchnorm=batchnorm )
+                                                   batchnorm=batchnorm, activation_type=args.activation_type)
         elif len(glob.glob(args.datapath + "/*.npz")) > 0:
             model, masks = create_network_from_npz(datapath=args.datapath, inputsize=args.inputsize, 
                                                    genotype_path=args.genotype_path,
