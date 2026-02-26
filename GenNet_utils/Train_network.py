@@ -335,18 +335,22 @@ def get_network(args):
                                                      filters=args.filters, one_hot=args.onehot)
     else:
         if os.path.exists(args.datapath + "/topology.csv"):
-            model, masks = create_network_from_csv(datapath=args.datapath, inputsize=args.inputsize, 
+            model, masks = create_network_from_csv(datapath=args.datapath, inputsize=args.inputsize,
                                                    genotype_path=args.genotype_path,
                                                    l1_value=args.L1, L1_act=args.L1_act, regression=regression,
                                                    num_covariates=args.num_covariates, one_hot=args.onehot,
-                                                   batchnorm=batchnorm, activation_type=args.activation_type)
+                                                   batchnorm=batchnorm, activation_type=args.activation_type,
+                                                   intermediate_dense_units=getattr(args, 'intermediate_dense', 0),
+                                                   intermediate_activation=getattr(args, 'intermediate_activation', None))
         elif len(glob.glob(args.datapath + "/*.npz")) > 0:
-            model, masks = create_network_from_npz(datapath=args.datapath, inputsize=args.inputsize, 
+            model, masks = create_network_from_npz(datapath=args.datapath, inputsize=args.inputsize,
                                                    genotype_path=args.genotype_path,
                                                    l1_value=args.L1, L1_act=args.L1_act, regression=regression,
                                                    num_covariates=args.num_covariates, one_hot=args.onehot,
                                                    mask_order=args.mask_order if hasattr(args, 'mask_order') else None,
-                                                   batchnorm=batchnorm)
+                                                   batchnorm=batchnorm,
+                                                   intermediate_dense_units=getattr(args, 'intermediate_dense', 0),
+                                                   intermediate_activation=getattr(args, 'intermediate_activation', None))
 
     optimizer_model = Adam(lr=args.learning_rate)
 

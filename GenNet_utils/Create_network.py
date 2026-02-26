@@ -1,4 +1,5 @@
 import sys
+import os
 import glob
 import numpy as np
 import pandas as pd
@@ -12,7 +13,6 @@ import scipy
 import tables
 tf.keras.backend.set_epsilon(0.0000001)
 
-import os
 from GenNet_utils.Normalization import PerVariantNormalization
 
 tf_version = tf.__version__  # ToDo use packaging.version
@@ -122,6 +122,63 @@ def add_covariates(model, input_cov, num_covariates, regression, negative_values
                        bias_initializer= tf.keras.initializers.Constant(mean_ytrain))(model)
     return model
 
+def add_intermediate_dense(model, num_units, L1_act, l1_value,
+                          regression, batchnorm=True,
+                          activation_type=None):
+    """
+    Add optional dense layer after annotation layers.
+
+    Purpose: Learn pathway-pathway interactions in a fully connected manner
+    after the sparse annotation layers. This allows the model to flexibly
+    capture inter-pathway relationships that may not be encoded in the topology.
+
+    Args:
+        model: Current model state (after Flatten)
+        num_units: Number of hidden units (0 = disabled)
+        L1_act: Activation regularization strength
+        l1_value: Weight regularization strength
+        regression: Problem type (affects default activation)
+        batchnorm: If True use BatchNorm, else PerVariantNorm
+        activation_type: Override activation function
+
+    Returns:
+        model: Updated model (with or without new dense layer)
+
+    Example:
+        model = K.layers.Flatten()(model)
+        model = add_intermediate_dense(model, num_units=128, L1_act=0.01,
+                                      l1_value=0.01, regression=True)
+    """
+    if num_units > 0:
+        # Default activation based on problem type
+        if activation_type is None:
+            activation_type = "relu"
+
+        # Dense layer with regularization
+        model = K.layers.Dense(
+            units=num_units,
+            name="annotation_dense",
+            kernel_regularizer=tf.keras.regularizers.l1(l=l1_value),
+            activity_regularizer=K.regularizers.l1(L1_act)
+        )(model)
+
+        # Activation
+        model = K.layers.Activation(activation_type)(model)
+
+        # Normalization
+        if batchnorm:
+            model = K.layers.BatchNormalization(
+                center=False,
+                scale=False,
+                name="annotation_dense_bn"
+            )(model)
+        else:
+            model = PerVariantNormalization(
+                name="annotation_dense_pv"
+            )(model)
+
+    return model
+
 def create_network_from_npz(datapath,
                             inputsize,
                             genotype_path,
@@ -131,7 +188,9 @@ def create_network_from_npz(datapath,
                             one_hot = False,
                             num_covariates=0,
                             mask_order = [],
-                            batchnorm = True):
+                            batchnorm = True,
+                            intermediate_dense_units=0,
+                            intermediate_activation=None):
     # Ensure paths have trailing slashes
     if not datapath.endswith('/'):
         datapath = datapath + '/'
@@ -206,6 +265,17 @@ def create_network_from_npz(datapath,
 
     model = K.layers.Flatten()(model)
 
+    # Optional intermediate dense layer for pathway-pathway interactions
+    model = add_intermediate_dense(
+        model,
+        num_units=intermediate_dense_units,
+        L1_act=L1_act,
+        l1_value=l1_value,
+        regression=regression,
+        batchnorm=batchnorm,
+        activation_type=intermediate_activation
+    )
+
     if all_masks_available:
         model = LocallyDirected1D(mask=masks[-1], filters=1, input_shape=(mask.shape[0], 1),
                                   name="output_layer")(model)
@@ -236,7 +306,9 @@ def create_network_from_csv(datapath,
                             one_hot=False,
                             num_covariates=0,
                             batchnorm=True,
-                            activation_type=None):
+                            activation_type=None,
+                            intermediate_dense_units=0,
+                            intermediate_activation=None):
 
     # Ensure paths have trailing slashes
     if not datapath.endswith('/'):
@@ -284,6 +356,17 @@ def create_network_from_csv(datapath,
                             activation_type=activation_type)
 
     model = K.layers.Flatten()(model)
+
+    # Optional intermediate dense layer for pathway-pathway interactions
+    model = add_intermediate_dense(
+        model,
+        num_units=intermediate_dense_units,
+        L1_act=L1_act,
+        l1_value=l1_value,
+        regression=regression,
+        batchnorm=batchnorm,
+        activation_type=intermediate_activation
+    )
 
     model = K.layers.Dense(units=1, name="output_layer",
                            kernel_regularizer=tf.keras.regularizers.l1(l=l1_value),

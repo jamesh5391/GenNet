@@ -28,3 +28,7 @@ data/*
 annovar/*
 my_simulation_run/*
 scripts/my_simulation_run/*
+
+#other
+dev_docs/
+CLAUDE.md

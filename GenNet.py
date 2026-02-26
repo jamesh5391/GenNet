@@ -257,7 +257,23 @@ class ArgumentParser():
             action='store_true',
             default=False,
             help='Use the pervariantnorm layer instead of batchnorm for better normalization for interpretation')
-            
+
+        parser_train.add_argument(
+            "-intermediate_dense",
+            type=int,
+            metavar="NUM_UNITS",
+            default=0,
+            help='Number of units in optional dense layer after annotation layers. '
+                 'Set to 0 to disable (default). Use this to learn pathway-pathway '
+                 'interactions. Example: -intermediate_dense 128')
+
+        parser_train.add_argument(
+            "-intermediate_activation",
+            type=str,
+            default=None,
+            choices=["relu", "tanh", "sigmoid", "linear"],
+            help='Activation for intermediate dense layer. Defaults to relu.')
+
         return parser_train
 
     def make_parser_plot(self, parser_plot):
